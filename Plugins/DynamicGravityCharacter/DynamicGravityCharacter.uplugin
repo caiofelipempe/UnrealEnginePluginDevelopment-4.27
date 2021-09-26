@@ -1,0 +1,25 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.27",
+	"EngineVersion": "4.27",
+	"FriendlyName": "DynamicGravityCharacter",
+	"Description": "Makes character have gravity for all directions. It also makes the Character walk on the walls and ceiling, controlling the camera to adapt to the character rotation.",
+	"Category": "Other",
+	"CreatedBy": "Caio Felipe de Moura Peixoto",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/content/4bc30fe2bc5f402a8f9b7a08dd1cd375",
+	"SupportURL": "",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "DynamicGravityCharacter",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}
