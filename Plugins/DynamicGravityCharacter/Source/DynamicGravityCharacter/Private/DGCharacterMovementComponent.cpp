@@ -13,6 +13,214 @@
 #include "Engine/GameEngine.h"
 
 
+
+// CVars
+namespace CharacterMovementCVars
+{
+	// Use newer RPCs and RPC parameter serialization that allow variable length data without changing engine APIs.
+	static int32 NetUsePackedMovementRPCs = 1;
+	FAutoConsoleVariableRef CVarNetUsePackedMovementRPCs(
+		TEXT("p.NetUsePackedMovementRPCs"),
+		NetUsePackedMovementRPCs,
+		TEXT("Whether to use newer movement RPC parameter packed serialization. If disabled, old deprecated movement RPCs will be used instead.\n")
+		TEXT("0: Disable, 1: Enable"),
+		ECVF_Default);
+
+	static int32 NetPackedMovementMaxBits = 2048;
+	FAutoConsoleVariableRef CVarNetPackedMovementMaxBits(
+		TEXT("p.NetPackedMovementMaxBits"),
+		NetPackedMovementMaxBits,
+		TEXT("Max number of bits allowed in each packed movement RPC. Used to protect against bad data causing the server to allocate too much memory.\n"),
+		ECVF_Default);
+
+	// Listen server smoothing
+	static int32 NetEnableListenServerSmoothing = 1;
+	FAutoConsoleVariableRef CVarNetEnableListenServerSmoothing(
+		TEXT("p.NetEnableListenServerSmoothing"),
+		NetEnableListenServerSmoothing,
+		TEXT("Whether to enable mesh smoothing on listen servers for the local view of remote clients.\n")
+		TEXT("0: Disable, 1: Enable"),
+		ECVF_Default);
+
+	// Latent proxy prediction
+	static int32 NetEnableSkipProxyPredictionOnNetUpdate = 1;
+	FAutoConsoleVariableRef CVarNetEnableSkipProxyPredictionOnNetUpdate(
+		TEXT("p.NetEnableSkipProxyPredictionOnNetUpdate"),
+		NetEnableSkipProxyPredictionOnNetUpdate,
+		TEXT("Whether to allow proxies to skip prediction on frames with a network position update, if bNetworkSkipProxyPredictionOnNetUpdate is also true on the movement component.\n")
+		TEXT("0: Disable, 1: Enable"),
+		ECVF_Default);
+
+	// Logging when character is stuck. Off by default in shipping.
+#if UE_BUILD_SHIPPING
+	static float StuckWarningPeriod = -1.f;
+#else
+	static float StuckWarningPeriod = 1.f;
+#endif
+
+	FAutoConsoleVariableRef CVarStuckWarningPeriod(
+		TEXT("p.CharacterStuckWarningPeriod"),
+		StuckWarningPeriod,
+		TEXT("How often (in seconds) we are allowed to log a message about being stuck in geometry.\n")
+		TEXT("<0: Disable, >=0: Enable and log this often, in seconds."),
+		ECVF_Default);
+
+	static int32 NetEnableMoveCombining = 1;
+	FAutoConsoleVariableRef CVarNetEnableMoveCombining(
+		TEXT("p.NetEnableMoveCombining"),
+		NetEnableMoveCombining,
+		TEXT("Whether to enable move combining on the client to reduce bandwidth by combining similar moves.\n")
+		TEXT("0: Disable, 1: Enable"),
+		ECVF_Default);
+
+	static int32 NetEnableMoveCombiningOnStaticBaseChange = 1;
+	FAutoConsoleVariableRef CVarNetEnableMoveCombiningOnStaticBaseChange(
+		TEXT("p.NetEnableMoveCombiningOnStaticBaseChange"),
+		NetEnableMoveCombiningOnStaticBaseChange,
+		TEXT("Whether to allow combining client moves when moving between static geometry.\n")
+		TEXT("0: Disable, 1: Enable"),
+		ECVF_Default);
+
+	static float NetMoveCombiningAttachedLocationTolerance = 0.01f;
+	FAutoConsoleVariableRef CVarNetMoveCombiningAttachedLocationTolerance(
+		TEXT("p.NetMoveCombiningAttachedLocationTolerance"),
+		NetMoveCombiningAttachedLocationTolerance,
+		TEXT("Tolerance for relative location attachment change when combining moves. Small tolerances allow for very slight jitter due to transform updates."),
+		ECVF_Default);
+
+	static float NetMoveCombiningAttachedRotationTolerance = 0.01f;
+	FAutoConsoleVariableRef CVarNetMoveCombiningAttachedRotationTolerance(
+		TEXT("p.NetMoveCombiningAttachedRotationTolerance"),
+		NetMoveCombiningAttachedRotationTolerance,
+		TEXT("Tolerance for relative rotation attachment change when combining moves. Small tolerances allow for very slight jitter due to transform updates."),
+		ECVF_Default);
+
+	static float NetStationaryRotationTolerance = 0.1f;
+	FAutoConsoleVariableRef CVarNetStationaryRotationTolerance(
+		TEXT("p.NetStationaryRotationTolerance"),
+		NetStationaryRotationTolerance,
+		TEXT("Tolerance for GetClientNetSendDeltaTime() to remain throttled when small control rotation changes occur."),
+		ECVF_Default);
+
+	static int32 NetUseClientTimestampForReplicatedTransform = 1;
+	FAutoConsoleVariableRef CVarNetUseClientTimestampForReplicatedTransform(
+		TEXT("p.NetUseClientTimestampForReplicatedTransform"),
+		NetUseClientTimestampForReplicatedTransform,
+		TEXT("If enabled, use client timestamp changes to track the replicated transform timestamp, otherwise uses server tick time as the timestamp.\n")
+		TEXT("Game session usually needs to be restarted if this is changed at runtime.\n")
+		TEXT("0: Disable, 1: Enable"),
+		ECVF_Default);
+
+	static int32 ReplayUseInterpolation = 0;
+	FAutoConsoleVariableRef CVarReplayUseInterpolation(
+		TEXT("p.ReplayUseInterpolation"),
+		ReplayUseInterpolation,
+		TEXT(""),
+		ECVF_Default);
+
+	static int32 ReplayLerpAcceleration = 0;
+	FAutoConsoleVariableRef CVarReplayLerpAcceleration(
+		TEXT("p.ReplayLerpAcceleration"),
+		ReplayLerpAcceleration,
+		TEXT(""),
+		ECVF_Default);
+
+	static int32 FixReplayOverSampling = 1;
+	FAutoConsoleVariableRef CVarFixReplayOverSampling(
+		TEXT("p.FixReplayOverSampling"),
+		FixReplayOverSampling,
+		TEXT("If 1, remove invalid replay samples that can occur due to oversampling (sampling at higher rate than physics is being ticked)"),
+		ECVF_Default);
+
+	static int32 ForceJumpPeakSubstep = 1;
+	FAutoConsoleVariableRef CVarForceJumpPeakSubstep(
+		TEXT("p.ForceJumpPeakSubstep"),
+		ForceJumpPeakSubstep,
+		TEXT("If 1, force a jump substep to always reach the peak position of a jump, which can often be cut off as framerate lowers."),
+		ECVF_Default);
+
+	static float NetServerMoveTimestampExpiredWarningThreshold = 1.0f;
+	FAutoConsoleVariableRef CVarNetServerMoveTimestampExpiredWarningThreshold(
+		TEXT("net.NetServerMoveTimestampExpiredWarningThreshold"),
+		NetServerMoveTimestampExpiredWarningThreshold,
+		TEXT("Tolerance for ServerMove() to warn when client moves are expired more than this time threshold behind the server."),
+		ECVF_Default);
+
+#if !UE_BUILD_SHIPPING
+
+	int32 NetShowCorrections = 0;
+	FAutoConsoleVariableRef CVarNetShowCorrections(
+		TEXT("p.NetShowCorrections"),
+		NetShowCorrections,
+		TEXT("Whether to draw client position corrections (red is incorrect, green is corrected).\n")
+		TEXT("0: Disable, 1: Enable"),
+		ECVF_Cheat);
+
+	float NetCorrectionLifetime = 4.f;
+	FAutoConsoleVariableRef CVarNetCorrectionLifetime(
+		TEXT("p.NetCorrectionLifetime"),
+		NetCorrectionLifetime,
+		TEXT("How long a visualized network correction persists.\n")
+		TEXT("Time in seconds each visualized network correction persists."),
+		ECVF_Cheat);
+
+#endif // !UE_BUILD_SHIPPING
+
+
+#if !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+
+	static float NetForceClientAdjustmentPercent = 0.f;
+	FAutoConsoleVariableRef CVarNetForceClientAdjustmentPercent(
+		TEXT("p.NetForceClientAdjustmentPercent"),
+		NetForceClientAdjustmentPercent,
+		TEXT("Percent of ServerCheckClientError checks to return true regardless of actual error.\n")
+		TEXT("Useful for testing client correction code.\n")
+		TEXT("<=0: Disable, 0.05: 5% of checks will return failed, 1.0: Always send client adjustments"),
+		ECVF_Cheat);
+
+	static float NetForceClientServerMoveLossPercent = 0.f;
+	FAutoConsoleVariableRef CVarNetForceClientServerMoveLossPercent(
+		TEXT("p.NetForceClientServerMoveLossPercent"),
+		NetForceClientServerMoveLossPercent,
+		TEXT("Percent of ServerMove calls for client to not send.\n")
+		TEXT("Useful for testing server force correction code.\n")
+		TEXT("<=0: Disable, 0.05: 5% of checks will return failed, 1.0: never send server moves"),
+		ECVF_Cheat);
+
+	static float NetForceClientServerMoveLossDuration = 0.f;
+	FAutoConsoleVariableRef CVarNetForceClientServerMoveLossDuration(
+		TEXT("p.NetForceClientServerMoveLossDuration"),
+		NetForceClientServerMoveLossDuration,
+		TEXT("Duration in seconds for client to drop ServerMove calls when NetForceClientServerMoveLossPercent check passes.\n")
+		TEXT("Useful for testing server force correction code.\n")
+		TEXT("Duration of zero means single frame loss."),
+		ECVF_Cheat);
+
+	static int32 VisualizeMovement = 0;
+	FAutoConsoleVariableRef CVarVisualizeMovement(
+		TEXT("p.VisualizeMovement"),
+		VisualizeMovement,
+		TEXT("Whether to draw in-world debug information for character movement.\n")
+		TEXT("0: Disable, 1: Enable"),
+		ECVF_Cheat);
+
+	static int32 NetVisualizeSimulatedCorrections = 0;
+	FAutoConsoleVariableRef CVarNetVisualizeSimulatedCorrections(
+		TEXT("p.NetVisualizeSimulatedCorrections"),
+		NetVisualizeSimulatedCorrections,
+		TEXT("")
+		TEXT("0: Disable, 1: Enable"),
+		ECVF_Cheat);
+
+	static int32 DebugTimeDiscrepancy = 0;
+	FAutoConsoleVariableRef CVarDebugTimeDiscrepancy(
+		TEXT("p.DebugTimeDiscrepancy"),
+		DebugTimeDiscrepancy,
+		TEXT("Whether to log detailed Movement Time Discrepancy values for testing")
+		TEXT("0: Disable, 1: Enable Detection logging, 2: Enable Detection and Resolution logging"),
+		ECVF_Cheat);
+#endif // !(UE_BUILD_SHIPPING || UE_BUILD_TEST)
+}
 /**
  * Character stats
  */
@@ -48,7 +256,7 @@ void UDGCharacterMovementComponent::UpdateVerticalDirection()
 		return;
 	}
 
-	FVector CurrentTickAttractionImpulseNormal = LastAttractionImpulse.GetSafeNormal();
+	FVector CurrentTickAttractionImpulseNormal = AttractionImpulse.GetSafeNormal();
 	if (CurrentTickAttractionImpulseNormal.IsNormalized())
 	{
 		VerticalDirection = -CurrentTickAttractionImpulseNormal;
@@ -684,6 +892,272 @@ void UDGCharacterMovementComponent::ApplyRootMotionToVelocity(float deltaTime)
 			SetMovementMode(MOVE_Falling);
 		}
 	}
+}
+
+void UDGCharacterMovementComponent::SetDefaultMovementMode()
+{
+	// check for water volume
+	if (CanEverSwim() && IsInWater())
+	{
+		SetMovementMode(DefaultWaterMovementMode);
+	}
+	else if (!CharacterOwner || MovementMode != DefaultLandMovementMode)
+	{
+		const FVector SavedVerticalVelocity = Velocity.ProjectOnToNormal(VerticalDirection);
+		SetMovementMode(DefaultLandMovementMode);
+
+		// Avoid 1-frame delay if trying to walk but walking fails at this location.
+		if (MovementMode == MOVE_Walking && GetMovementBase() == NULL)
+		{
+			Velocity += SavedVerticalVelocity; // Prevent temporary walking state from zeroing Z velocity.
+			SetMovementMode(MOVE_Falling);
+		}
+	}
+}
+
+void UDGCharacterMovementComponent::MoveSmooth(const FVector& InVelocity, const float DeltaSeconds, FStepDownResult* OutStepDownResult)
+{
+	if (!HasValidData())
+	{
+		return;
+	}
+
+	// Custom movement mode.
+	// Custom movement may need an update even if there is zero velocity.
+	if (MovementMode == MOVE_Custom)
+	{
+		FScopedMovementUpdate ScopedMovementUpdate(UpdatedComponent, bEnableScopedMovementUpdates ? EScopedUpdate::DeferredUpdates : EScopedUpdate::ImmediateUpdates);
+		PhysCustom(DeltaSeconds, 0);
+		return;
+	}
+
+	FVector Delta = InVelocity * DeltaSeconds;
+	if (Delta.IsZero())
+	{
+		return;
+	}
+
+	FScopedMovementUpdate ScopedMovementUpdate(UpdatedComponent, bEnableScopedMovementUpdates ? EScopedUpdate::DeferredUpdates : EScopedUpdate::ImmediateUpdates);
+
+	if (IsMovingOnGround())
+	{
+		MoveAlongFloor(InVelocity, DeltaSeconds, OutStepDownResult);
+	}
+	else
+	{
+		FHitResult Hit(1.f);
+		SafeMoveUpdatedComponent(Delta, UpdatedComponent->GetComponentQuat(), true, Hit);
+
+		if (Hit.IsValidBlockingHit())
+		{
+			bool bSteppedUp = false;
+
+			if (IsFlying())
+			{
+				if (CanStepUp(Hit))
+				{
+					OutStepDownResult = NULL; // No need for a floor when not walking.
+					if (FMath::Abs(FVector::DotProduct(Hit.ImpactNormal, VerticalDirection)) < 0.2f)
+					{
+						const FVector DesiredDir = Delta.GetSafeNormal();
+						const float UpDown = VerticalDirection | DesiredDir;
+						if ((UpDown < 0.5f) && (UpDown > -0.2f))
+						{
+							bSteppedUp = StepUp(VerticalDirection, Delta * (1.f - Hit.Time), Hit, OutStepDownResult);
+						}
+					}
+				}
+			}
+
+			// If StepUp failed, try sliding.
+			if (!bSteppedUp)
+			{
+				SlideAlongSurface(Delta, 1.f - Hit.Time, Hit.Normal, Hit, false);
+			}
+		}
+	}
+}
+
+void UDGCharacterMovementComponent::SimulateMovement(float DeltaSeconds)
+{
+	if (!HasValidData() || UpdatedComponent->Mobility != EComponentMobility::Movable || UpdatedComponent->IsSimulatingPhysics())
+	{
+		return;
+	}
+
+	const bool bIsSimulatedProxy = (CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy);
+
+	const FRepMovement& ConstRepMovement = CharacterOwner->GetReplicatedMovement();
+
+	// Workaround for replication not being updated initially
+	if (bIsSimulatedProxy &&
+		ConstRepMovement.Location.IsZero() &&
+		ConstRepMovement.Rotation.IsZero() &&
+		ConstRepMovement.LinearVelocity.IsZero())
+	{
+		return;
+	}
+
+	// If base is not resolved on the client, we should not try to simulate at all
+	if (CharacterOwner->GetReplicatedBasedMovement().IsBaseUnresolved())
+	{
+		//UE_LOG(LogCharacterMovement, Verbose, TEXT("Base for simulated character '%s' is not resolved on client, skipping SimulateMovement"), *CharacterOwner->GetName());
+		return;
+	}
+
+	FVector OldVelocity;
+	FVector OldLocation;
+
+	// Scoped updates can improve performance of multiple MoveComponent calls.
+	{
+		FScopedMovementUpdate ScopedMovementUpdate(UpdatedComponent, bEnableScopedMovementUpdates ? EScopedUpdate::DeferredUpdates : EScopedUpdate::ImmediateUpdates);
+
+		bool bHandledNetUpdate = false;
+		if (bIsSimulatedProxy)
+		{
+			// Handle network changes
+			if (bNetworkUpdateReceived)
+			{
+				bNetworkUpdateReceived = false;
+				bHandledNetUpdate = true;
+				//UE_LOG(LogCharacterMovement, Verbose, TEXT("Proxy %s received net update"), *CharacterOwner->GetName());
+				if (bNetworkMovementModeChanged)
+				{
+					ApplyNetworkMovementMode(CharacterOwner->GetReplicatedMovementMode());
+					bNetworkMovementModeChanged = false;
+				}
+				else if (bJustTeleported || bForceNextFloorCheck)
+				{
+					// Make sure floor is current. We will continue using the replicated base, if there was one.
+					bJustTeleported = false;
+					UpdateFloorFromAdjustment();
+				}
+			}
+			else if (bForceNextFloorCheck)
+			{
+				UpdateFloorFromAdjustment();
+			}
+		}
+
+		UpdateCharacterStateBeforeMovement(DeltaSeconds);
+
+		if (MovementMode != MOVE_None)
+		{
+			//TODO: Also ApplyAccumulatedForces()?
+			HandlePendingLaunch();
+		}
+		ClearAccumulatedForces();
+
+		if (MovementMode == MOVE_None)
+		{
+			return;
+		}
+
+		const bool bSimGravityDisabled = (bIsSimulatedProxy && CharacterOwner->bSimGravityDisabled);
+		const bool bZeroReplicatedGroundVelocity = (bIsSimulatedProxy && IsMovingOnGround() && ConstRepMovement.LinearVelocity.IsZero());
+
+		// bSimGravityDisabled means velocity was zero when replicated and we were stuck in something. Avoid external changes in velocity as well.
+		// Being in ground movement with zero velocity, we cannot simulate proxy velocities safely because we might not get any further updates from the server.
+		if (bSimGravityDisabled || bZeroReplicatedGroundVelocity)
+		{
+			Velocity = FVector::ZeroVector;
+		}
+
+		MaybeUpdateBasedMovement(DeltaSeconds);
+
+		// simulated pawns predict location
+		OldVelocity = Velocity;
+		OldLocation = UpdatedComponent->GetComponentLocation();
+
+		UpdateProxyAcceleration();
+
+		// May only need to simulate forward on frames where we haven't just received a new position update.
+		if (!bHandledNetUpdate || !bNetworkSkipProxyPredictionOnNetUpdate /*|| !CharacterMovementCVars::NetEnableSkipProxyPredictionOnNetUpdate*/)
+		{
+			//UE_LOG(LogCharacterMovement, Verbose, TEXT("Proxy %s simulating movement"), *GetNameSafe(CharacterOwner));
+			FStepDownResult StepDownResult;
+			MoveSmooth(Velocity, DeltaSeconds, &StepDownResult);
+
+			// find floor and check if falling
+			if (IsMovingOnGround() || MovementMode == MOVE_Falling)
+			{
+
+				if (StepDownResult.bComputedFloor)
+				{
+					CurrentFloor = StepDownResult.FloorResult;
+				}
+				else if (IsMovingOnGround() || FVector::DotProduct(Velocity, VerticalDirection) <= 0.f)
+				{
+					FindFloor(UpdatedComponent->GetComponentLocation(), CurrentFloor, Velocity.IsZero(), NULL);
+				}
+				else
+				{
+					CurrentFloor.Clear();
+				}
+
+				if (!CurrentFloor.IsWalkableFloor())
+				{
+					if (!bSimGravityDisabled)
+					{
+						// No floor, must fall.
+						if (FVector::DotProduct(Velocity, VerticalDirection) <= 0.f || bApplyGravityWhileJumping || !CharacterOwner->IsJumpProvidingForce())
+						{
+							Velocity = NewFallVelocity(Velocity, LastAttractionImpulse, DeltaSeconds);
+						}
+					}
+					SetMovementMode(MOVE_Falling);
+				}
+				else
+				{
+					// Walkable floor
+					if (IsMovingOnGround())
+					{
+						AdjustFloorHeight();
+						SetBase(CurrentFloor.HitResult.Component.Get(), CurrentFloor.HitResult.BoneName);
+					}
+					else if (MovementMode == MOVE_Falling)
+					{
+						if (CurrentFloor.FloorDist <= MIN_FLOOR_DIST || (bSimGravityDisabled && CurrentFloor.FloorDist <= MAX_FLOOR_DIST))
+						{
+							// Landed
+							SetPostLandedPhysics(CurrentFloor.HitResult);
+						}
+						else
+						{
+							if (!bSimGravityDisabled)
+							{
+								// Continue falling.
+								Velocity = NewFallVelocity(Velocity, FVector(0.f, 0.f, GetGravityZ()), DeltaSeconds);
+							}
+							CurrentFloor.Clear();
+						}
+					}
+				}
+			}
+		}
+		else
+		{
+			//UE_LOG(LogCharacterMovement, Verbose, TEXT("Proxy %s SKIPPING simulate movement"), *GetNameSafe(CharacterOwner));
+		}
+
+		UpdateCharacterStateAfterMovement(DeltaSeconds);
+
+		// consume path following requested velocity
+		bHasRequestedVelocity = false;
+
+		OnMovementUpdated(DeltaSeconds, OldLocation, OldVelocity);
+	} // End scoped movement update
+
+	// Call custom post-movement events. These happen after the scoped movement completes in case the events want to use the current state of overlaps etc.
+	CallMovementUpdateDelegate(DeltaSeconds, OldLocation, OldVelocity);
+
+	SaveBaseLocation();
+	UpdateComponentVelocity();
+	bJustTeleported = false;
+
+	LastUpdateLocation = UpdatedComponent ? UpdatedComponent->GetComponentLocation() : FVector::ZeroVector;
+	LastUpdateRotation = UpdatedComponent ? UpdatedComponent->GetComponentQuat() : FQuat::Identity;
+	LastUpdateVelocity = Velocity;
 }
 
 void UDGCharacterMovementComponent::PhysWalking(float deltaTime, int32 Iterations)

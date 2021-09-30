@@ -189,6 +189,9 @@ protected:
 	virtual FVector GetLedgeMove(const FVector& OldLocation, const FVector& Delta, const FVector& GravDir) const override;
 	virtual void ApplyAccumulatedForces(float DeltaSeconds) override;
 	void ApplyRootMotionToVelocity(float deltaTime);
+	virtual void SetDefaultMovementMode() override;
+	virtual void MoveSmooth(const FVector& InVelocity, const float DeltaSeconds, FStepDownResult* OutStepDownResult = NULL) override;
+	virtual void SimulateMovement(float DeltaTime) override;
 
 	void PhysWalking(float deltaTime, int32 Iterations) override;
 
