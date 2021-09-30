@@ -211,6 +211,7 @@ public:
 
 	virtual bool IsValidLandingSpot(const FVector& CapsuleLocation, const FHitResult& Hit) const override;
 
+	virtual FVector ConstrainAnimRootMotionVelocity(const FVector& RootMotionVelocity, const FVector& CurrentVelocity) const override;
 
 	virtual bool IsWalkable(const FHitResult& Hit) const override;
 	virtual bool IsWalkable(const FVector WalkableFloorNormal, const FHitResult& Hit) const;

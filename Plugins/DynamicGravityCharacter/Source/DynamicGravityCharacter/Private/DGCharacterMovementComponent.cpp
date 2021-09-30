@@ -1676,6 +1676,19 @@ bool UDGCharacterMovementComponent::IsValidLandingSpot(const FVector& CapsuleLoc
 	return true;
 }
 
+FVector UDGCharacterMovementComponent::ConstrainAnimRootMotionVelocity(const FVector& RootMotionVelocity, const FVector& CurrentVelocity) const
+{
+	FVector Result = RootMotionVelocity;
+
+	// Do not override Velocity.Z if in falling physics, we want to keep the effect of gravity.
+	if (IsFalling())
+	{
+		Result = Result - FVector::DotProduct(Result, VerticalDirection) + FVector::DotProduct(CurrentVelocity, VerticalDirection);
+	}
+
+	return Result;
+}
+
 bool UDGCharacterMovementComponent::IsWalkable(const FHitResult& Hit) const
 {
 	return IsWalkable(WalkableFloorNormal(), Hit);
