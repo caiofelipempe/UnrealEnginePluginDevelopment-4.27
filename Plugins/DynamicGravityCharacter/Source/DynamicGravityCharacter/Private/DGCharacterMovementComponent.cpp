@@ -42,20 +42,24 @@ UDGCharacterMovementComponent::UDGCharacterMovementComponent()
 void UDGCharacterMovementComponent::UpdateVerticalDirection()
 {
 	FVector WalkableFloorNormal = this->WalkableFloorNormal();
-	if (IsMovingOnGround() && !WalkableFloorNormal.IsZero())
+	if (IsMovingOnGround() && WalkableFloorNormal.IsNormalized())
 	{
 		VerticalDirection = WalkableFloorNormal;
 		return;
 	}
 
-	FVector CurrentTickAttractionImpulseNormal = AttractionImpulse.GetSafeNormal();
-	if (!CurrentTickAttractionImpulseNormal.IsZero())
+	FVector CurrentTickAttractionImpulseNormal = LastAttractionImpulse.GetSafeNormal();
+	if (CurrentTickAttractionImpulseNormal.IsNormalized())
 	{
-		VerticalDirection = -CurrentTickAttractionImpulseNormal.GetSafeNormal();
+		VerticalDirection = -CurrentTickAttractionImpulseNormal;
 		return;
 	}
 
 	VerticalDirection = -GravityNormal();
+
+	if (!VerticalDirection.IsNormalized()) {
+		VerticalDirection = FVector::UpVector;
+	}
 }
 
 FVector UDGCharacterMovementComponent::WalkableFloorNormal() const
@@ -65,7 +69,7 @@ FVector UDGCharacterMovementComponent::WalkableFloorNormal() const
 	case EWalkableFloorNormalMode::WFN_Gravity:
 		return -GravityNormal();
 	case EWalkableFloorNormalMode::WFN_Attraction:
-		return -AttractionImpulse.GetSafeNormal();
+		return -LastAttractionImpulse.GetSafeNormal();
 	case EWalkableFloorNormalMode::WFN_CharacterRotation:
 		return CharacterOwner->GetActorUpVector();
 	case EWalkableFloorNormalMode::WFN_FloorImpactNormal:
@@ -78,7 +82,6 @@ FVector UDGCharacterMovementComponent::WalkableFloorNormal() const
 	}
 }
 
-//*/
 void UDGCharacterMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)
 {
 	if (!HasValidData())
@@ -156,9 +159,7 @@ void UDGCharacterMovementComponent::OnMovementModeChanged(EMovementMode Previous
 
 	CharacterOwner->OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
 }
-//*/
 
-//*/
 FVector UDGCharacterMovementComponent::ConstrainInputAcceleration(const FVector& InputAcceleration) const
 {
 	FVector VerticalInputAcceleration = InputAcceleration.ProjectOnToNormal(VerticalDirection);
@@ -236,9 +237,7 @@ void UDGCharacterMovementComponent::AdjustFloorHeight()
 		bForceNextFloorCheck = true;
 	}
 }
-//*/
 
-//*/
 void UDGCharacterMovementComponent::TwoWallAdjust(FVector& Delta, const FHitResult& Hit, const FVector& OldHitNormal) const
 {
 	const FVector InDelta = Delta;
@@ -288,9 +287,7 @@ void UDGCharacterMovementComponent::TwoWallAdjust(FVector& Delta, const FHitResu
 		}
 	}
 }
-//*/
 
-//*/
 bool UDGCharacterMovementComponent::StepUp(const FVector& FloorDirection, const FVector& Delta, const FHitResult& InHit, UCharacterMovementComponent::FStepDownResult* OutStepDownResult)
 {
 	// SCOPE_CYCLE_COUNTER(STAT_CharStepUp);
@@ -511,12 +508,10 @@ bool UDGCharacterMovementComponent::StepUp(const FVector& FloorDirection, const 
 
 	return true;
 }
-//*/
 
-//*/
 FVector UDGCharacterMovementComponent::HandleSlopeBoosting(const FVector& SlideResult, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const
 {
-	const FVector OpositeAttractionImpulseNormal = -AttractionImpulse.GetSafeNormal();
+	const FVector OpositeAttractionImpulseNormal = -LastAttractionImpulse.GetSafeNormal();
 
 	FVector Result = SlideResult;
 	float ResultZ = FVector::DotProduct(Result, OpositeAttractionImpulseNormal);
@@ -552,9 +547,7 @@ FVector UDGCharacterMovementComponent::HandleSlopeBoosting(const FVector& SlideR
 
 	return Result;
 }
-//*/
 
-//*/
 void UDGCharacterMovementComponent::RequestPathMove(const FVector& MoveInput)
 {
 	FVector AdjustedMoveInput(MoveInput);
@@ -599,15 +592,13 @@ FVector UDGCharacterMovementComponent::GetLedgeMove(const FVector& OldLocation, 
 
 	return FVector::ZeroVector;
 }
-//*/
 
-//*/
-void UDGCharacterMovementComponent::PhysWalking(float DeltaTime, int32 Iterations)
+void UDGCharacterMovementComponent::PhysWalking(float deltaTime, int32 Iterations)
 {
 	SCOPE_CYCLE_COUNTER(STAT_CharPhysWalking);
 	CSV_SCOPED_TIMING_STAT_EXCLUSIVE(CharPhysWalking);
 
-	if (DeltaTime < MIN_TICK_TIME)
+	if (deltaTime < MIN_TICK_TIME)
 	{
 		return;
 	}
@@ -625,12 +616,10 @@ void UDGCharacterMovementComponent::PhysWalking(float DeltaTime, int32 Iteration
 		return;
 	}
 
-
 	bJustTeleported = false;
 	bool bCheckedFall = false;
 	bool bTriedLedgeMove = false;
-	float remainingTime = DeltaTime;
-	const FVector InitialLocation = UpdatedComponent->GetComponentLocation();
+	float remainingTime = deltaTime;
 
 	// Perform the move
 	while ((remainingTime >= MIN_TICK_TIME) && (Iterations < MaxSimulationIterations) && CharacterOwner && (CharacterOwner->Controller || bRunPhysicsWithNoController || HasAnimRootMotion() || CurrentRootMotion.HasOverrideVelocity() || (CharacterOwner->GetLocalRole() == ROLE_SimulatedProxy)))
@@ -648,15 +637,10 @@ void UDGCharacterMovementComponent::PhysWalking(float DeltaTime, int32 Iteration
 
 		RestorePreAdditiveRootMotionVelocity();
 
-
 		// Ensure velocity is horizontal.
 		MaintainHorizontalGroundVelocity();
 		const FVector OldVelocity = Velocity;
-		//Acceleration.Z = 0.f;
-
-		// apply input to acceleration
-		Acceleration = ScaleInputAcceleration(ConstrainInputAcceleration(GetLastInputVector()));
-		AnalogInputModifier = ComputeAnalogInputModifier();
+		Acceleration = Acceleration - FVector::DotProduct(Acceleration, VerticalDirection);
 
 		// Apply acceleration
 		if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
@@ -719,6 +703,7 @@ void UDGCharacterMovementComponent::PhysWalking(float DeltaTime, int32 Iteration
 			FindFloor(UpdatedComponent->GetComponentLocation(), CurrentFloor, bZeroDelta, NULL);
 		}
 
+		// check for ledges here
 		const bool bCheckLedges = !CanWalkOffLedges();
 		if (bCheckLedges && !CurrentFloor.IsWalkableFloor())
 		{
@@ -761,7 +746,7 @@ void UDGCharacterMovementComponent::PhysWalking(float DeltaTime, int32 Iteration
 			{
 				if (ShouldCatchAir(OldFloor, CurrentFloor))
 				{
-					CharacterOwner->OnWalkingOffLedge(OldFloor.HitResult.ImpactNormal, OldFloor.HitResult.Normal, OldLocation, timeTick);
+					HandleWalkingOffLedge(OldFloor.HitResult.ImpactNormal, OldFloor.HitResult.Normal, OldLocation, timeTick);
 					if (IsMovingOnGround())
 					{
 						// If still walking, then fall. If not, assume the user set a different mode they want to keep.
@@ -778,7 +763,7 @@ void UDGCharacterMovementComponent::PhysWalking(float DeltaTime, int32 Iteration
 				// The floor check failed because it started in penetration
 				// We do not want to try to move downward because the downward sweep failed, rather we'd like to try to pop out of the floor.
 				FHitResult Hit(CurrentFloor.HitResult);
-				Hit.TraceEnd = Hit.TraceStart - VerticalDirection * -MAX_FLOOR_DIST; //FVector(0.f, 0.f, MAX_FLOOR_DIST);
+				Hit.TraceEnd = Hit.TraceStart + FVector(0.f, 0.f, MAX_FLOOR_DIST);
 				const FVector RequestedAdjustment = GetPenetrationAdjustment(Hit);
 				ResolvePenetration(RequestedAdjustment, Hit, UpdatedComponent->GetComponentQuat());
 				bForceNextFloorCheck = true;
@@ -812,13 +797,13 @@ void UDGCharacterMovementComponent::PhysWalking(float DeltaTime, int32 Iteration
 			{
 				// TODO-RootMotionSource: Allow this to happen during partial override Velocity, but only set allowed axes?
 				Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / timeTick;
+				MaintainHorizontalGroundVelocity();
 			}
 		}
 
 		// If we didn't move at all this iteration then abort (since future iterations will also be stuck).
 		if (UpdatedComponent->GetComponentLocation() == OldLocation)
 		{
-			Velocity = FVector(0, 0, 0);
 			remainingTime = 0.f;
 			break;
 		}
@@ -826,18 +811,10 @@ void UDGCharacterMovementComponent::PhysWalking(float DeltaTime, int32 Iteration
 
 	if (IsMovingOnGround())
 	{
-		if (UpdatedComponent->GetComponentLocation() == InitialLocation)
-		{
-			Velocity = FVector(0, 0, 0);
-		}
-		else {
-			MaintainHorizontalGroundVelocity();
-		}
+		MaintainHorizontalGroundVelocity();
 	}
 }
-//*/
 
-//*/
 FVector UDGCharacterMovementComponent::ComputeGroundMovementDelta(const FVector& Delta, const FHitResult& RampHit, const bool bHitFromLineTrace) const
 {
 	const FVector FloorNormal = RampHit.ImpactNormal;
@@ -864,9 +841,7 @@ FVector UDGCharacterMovementComponent::ComputeGroundMovementDelta(const FVector&
 
 	return Delta;
 }
-//*/
 
-//*/
 float UDGCharacterMovementComponent::SlideAlongSurface(const FVector& Delta, float Time, const FVector& InNormal, FHitResult& Hit, bool bHandleImpact)
 {
 	if (!Hit.bBlockingHit)
@@ -906,9 +881,7 @@ float UDGCharacterMovementComponent::SlideAlongSurface(const FVector& Delta, flo
 
 	return UMovementComponent::SlideAlongSurface(Delta, Time, Normal, Hit, bHandleImpact);
 }
-//*/
 
-//*/
 void UDGCharacterMovementComponent::MoveAlongFloor(const FVector& InVelocity, float DeltaSeconds, FStepDownResult* OutStepDownResult)
 {
 	if (!CurrentFloor.IsWalkableFloor())
@@ -975,9 +948,7 @@ void UDGCharacterMovementComponent::MoveAlongFloor(const FVector& InVelocity, fl
 		}
 	}
 }
-//*/
 
-//*/
 void UDGCharacterMovementComponent::MaintainHorizontalGroundVelocity()
 {
 	FVector VerticalVelocity = Velocity.ProjectOnToNormal(VerticalDirection);
@@ -998,9 +969,7 @@ void UDGCharacterMovementComponent::MaintainHorizontalGroundVelocity()
 		}
 	}
 }
-//*/
 
-//*/
 void UDGCharacterMovementComponent::Crouch(bool bClientSimulation)
 {
 	if (!HasValidData())
@@ -1093,9 +1062,7 @@ void UDGCharacterMovementComponent::Crouch(bool bClientSimulation)
 		}
 	}
 }
-//*/
 
-//*/
 void UDGCharacterMovementComponent::UnCrouch(bool bClientSimulation)
 {
 	if (!HasValidData())
@@ -1244,9 +1211,7 @@ void UDGCharacterMovementComponent::UnCrouch(bool bClientSimulation)
 		}
 	}
 }
-//*/
 
-//*/
 void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iterations)
 {
 	SCOPE_CYCLE_COUNTER(STAT_CharPhysFalling);
@@ -1260,7 +1225,7 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 
 
 	FVector FallAcceleration = GetFallingLateralAcceleration(DeltaTime);
-	FallAcceleration -= FallAcceleration.ProjectOnTo(AttractionImpulse);
+	FallAcceleration -= FallAcceleration.ProjectOnTo(LastAttractionImpulse);
 	const bool bHasAirControl = (FallAcceleration.SizeSquared() > 0.f);
 
 	float remainingTime = DeltaTime;
@@ -1289,18 +1254,18 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 				// Find velocity *without* acceleration.
 				TGuardValue<FVector> RestoreAcceleration(Acceleration, FVector::ZeroVector);
 				TGuardValue<FVector> RestoreVelocity(Velocity, Velocity);
-				Velocity -= Velocity.ProjectOnTo(AttractionImpulse);
+				Velocity -= Velocity.ProjectOnTo(LastAttractionImpulse);
 				CalcVelocity(timeTick, FallingLateralFriction, false, MaxDecel);
-				VelocityNoAirControl = Velocity - Velocity.ProjectOnTo(AttractionImpulse) + OldVelocity.ProjectOnTo(AttractionImpulse);
+				VelocityNoAirControl = Velocity - Velocity.ProjectOnTo(LastAttractionImpulse) + OldVelocity.ProjectOnTo(LastAttractionImpulse);
 			}
 
 			// Compute Velocity
 			{
 				// Acceleration = FallAcceleration for CalcVelocity(), but we restore it after using it.
 				TGuardValue<FVector> RestoreAcceleration(Acceleration, FallAcceleration);
-				Velocity -= Velocity.ProjectOnTo(AttractionImpulse);
+				Velocity -= Velocity.ProjectOnTo(LastAttractionImpulse);
 				CalcVelocity(timeTick, FallingLateralFriction, false, MaxDecel);
-				Velocity += OldVelocity.ProjectOnTo(AttractionImpulse);
+				Velocity += OldVelocity.ProjectOnTo(LastAttractionImpulse);
 			}
 
 			// Just copy Velocity to VelocityNoAirControl if they are the same (ie no acceleration).
@@ -1328,13 +1293,13 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 			}
 		}
 
-		Velocity = NewFallVelocity(Velocity, AttractionImpulse, GravityTime);
-		VelocityNoAirControl = bHasAirControl ? NewFallVelocity(VelocityNoAirControl, AttractionImpulse, GravityTime) : Velocity;
+		Velocity = NewFallVelocity(Velocity, LastAttractionImpulse, GravityTime);
+		VelocityNoAirControl = bHasAirControl ? NewFallVelocity(VelocityNoAirControl, LastAttractionImpulse, GravityTime) : Velocity;
 		const FVector AirControlAccel = (Velocity - VelocityNoAirControl) / timeTick;
 
 		ApplyRootMotionToVelocity(timeTick);
 
-		if (bNotifyApex && (Velocity.ProjectOnTo(AttractionImpulse).Size() <= 0.f))
+		if (bNotifyApex && (Velocity.ProjectOnTo(LastAttractionImpulse).Size() <= 0.f))
 		{
 			// Just passed jump apex since now going down
 			bNotifyApex = false;
@@ -1414,7 +1379,7 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 				if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !bJustTeleported)
 				{
 					const FVector NewVelocity = (Delta / subTimeTickRemaining);
-					Velocity = HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() ? Velocity + (NewVelocity - Velocity).ProjectOnTo(AttractionImpulse) : NewVelocity;
+					Velocity = HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() ? Velocity + (NewVelocity - Velocity).ProjectOnTo(LastAttractionImpulse) : NewVelocity;
 				}
 
 				if (subTimeTickRemaining > KINDA_SMALL_NUMBER && (Delta | Adjusted) > 0.f)
@@ -1443,7 +1408,7 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 							return;
 						}
 
-						const FVector OpositeAttractionImpulseNormal = -AttractionImpulse.GetSafeNormal();
+						const FVector OpositeAttractionImpulseNormal = -LastAttractionImpulse.GetSafeNormal();
 						// Act as if there was no air control on the last move when computing new deflection.
 						if (bHasAirControl && FVector::DotProduct(Hit.Normal, OpositeAttractionImpulseNormal) > VERTICAL_SLOPE_NORMAL_Z)
 						{
@@ -1471,7 +1436,7 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 						if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !bJustTeleported)
 						{
 							const FVector NewVelocity = (Delta / subTimeTickRemaining);
-							Velocity = HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() ? Velocity + (NewVelocity - Velocity).ProjectOnTo(AttractionImpulse) : NewVelocity;
+							Velocity = HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() ? Velocity + (NewVelocity - Velocity).ProjectOnTo(LastAttractionImpulse) : NewVelocity;
 						}
 
 						// bDitch=true means that pawn is straddling two slopes, neither of which he can stand on
@@ -1516,20 +1481,18 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 			}
 		}
 
-		FVector HorizontalVelocity = Velocity - Velocity.ProjectOnTo(AttractionImpulse);
+		FVector HorizontalVelocity = Velocity - Velocity.ProjectOnTo(LastAttractionImpulse);
 		if (HorizontalVelocity.SizeSquared() <= KINDA_SMALL_NUMBER * 10.f)
 		{
 			Velocity -= HorizontalVelocity;
 		}
 	}
 }
-//*/
 
-//*/
 FVector UDGCharacterMovementComponent::GetFallingLateralAcceleration(float DeltaTime)
 {
 	// No acceleration in Z
-	FVector FallAcceleration = Acceleration - Acceleration.ProjectOnTo(AttractionImpulse); //FVector(Acceleration.X, Acceleration.Y, 0.f);
+	FVector FallAcceleration = Acceleration - Acceleration.ProjectOnTo(LastAttractionImpulse);
 
 	// bound acceleration, falling object has minimal ability to impact acceleration
 	if (!HasAnimRootMotion() && FallAcceleration.SizeSquared() > 0.f)
@@ -1546,7 +1509,7 @@ bool UDGCharacterMovementComponent::DoJump(bool bReplayingMoves)
 	if (CharacterOwner && CharacterOwner->CanJump())
 	{
 		// Don't jump if we can't move up/down.
-		FVector JumpNormal = AttractionImpulse.IsZero() ? VerticalDirection : -AttractionImpulse.GetSafeNormal();
+		FVector JumpNormal = LastAttractionImpulse.IsZero() ? VerticalDirection : -LastAttractionImpulse.GetSafeNormal();
 		if (!bConstrainToPlane || FMath::Abs(FVector::DotProduct(PlaneConstraintNormal, JumpNormal)) != 1.f)
 		{
 			float VerticalVelocity = FVector::DotProduct(Velocity, JumpNormal);
@@ -1558,9 +1521,7 @@ bool UDGCharacterMovementComponent::DoJump(bool bReplayingMoves)
 
 	return false;
 }
-//*/
 
-//*/
 void UDGCharacterMovementComponent::JumpOff(AActor* MovementBaseActor)
 {
 	if (!bPerformingJumpOff)
@@ -1570,7 +1531,7 @@ void UDGCharacterMovementComponent::JumpOff(AActor* MovementBaseActor)
 		{
 			const float MaxSpeed = GetMaxSpeed() * 0.85f;
 			Velocity += MaxSpeed * GetBestDirectionOffActor(MovementBaseActor);
-			FVector JumpNormal = AttractionImpulse.IsZero() ? VerticalDirection : -AttractionImpulse.GetSafeNormal();
+			FVector JumpNormal = LastAttractionImpulse.IsZero() ? VerticalDirection : -LastAttractionImpulse.GetSafeNormal();
 			if ((Velocity - Velocity.ProjectOnToNormal(JumpNormal)).Size() > MaxSpeed)
 			{
 				Velocity = MaxSpeed * Velocity.GetSafeNormal();
@@ -1581,9 +1542,7 @@ void UDGCharacterMovementComponent::JumpOff(AActor* MovementBaseActor)
 		bPerformingJumpOff = false;
 	}
 }
-//*/
 
-//*/
 float UDGCharacterMovementComponent::BoostAirControl(float DeltaTime, float TickAirControl, const FVector& FallAcceleration)
 {
 	// Allow a burst of initial acceleration
@@ -1594,7 +1553,6 @@ float UDGCharacterMovementComponent::BoostAirControl(float DeltaTime, float Tick
 
 	return TickAirControl;
 }
-//*/
 
 void UDGCharacterMovementComponent::FindFloor(const FVector WalkableFloorNormal, const FRotator Rot, FVector CapsuleLocation, FFindFloorResult& FloorResult) const
 {
@@ -1640,20 +1598,19 @@ bool UDGCharacterMovementComponent::IsValidLandingSpot(const FVector& CapsuleLoc
 		float PawnRadius, PawnHalfHeight;
 		CharacterOwner->GetCapsuleComponent()->GetScaledCapsuleSize(PawnRadius, PawnHalfHeight);
 
-		//*// Reject hits that are above our lower hemisphere (can happen when sliding down a vertical surface).
+		// Reject hits that are above our lower hemisphere (can happen when sliding down a vertical surface).
 		// const float LowerHemisphereZ = Hit.Location.Z - PawnHalfHeight + PawnRadius;
 		if (FVector::DotProduct(Hit.ImpactPoint - Hit.Location, -WalkableFloorNormal) < 0)
 		{
 			return false;
 		}
-		//*/
 
-		//*// Reject hits that are barely on the cusp of the radius of the capsule
+		// Reject hits that are barely on the cusp of the radius of the capsule
 		if (!IsWithinEdgeTolerance(Hit.Location, Hit.ImpactPoint, PawnRadius))
 		{
 			return false;
 		}
-		//*//
+
 	}
 	else
 	{
@@ -1674,19 +1631,6 @@ bool UDGCharacterMovementComponent::IsValidLandingSpot(const FVector& CapsuleLoc
 	}
 
 	return true;
-}
-
-FVector UDGCharacterMovementComponent::ConstrainAnimRootMotionVelocity(const FVector& RootMotionVelocity, const FVector& CurrentVelocity) const
-{
-	FVector Result = RootMotionVelocity;
-
-	// Do not override Velocity.Z if in falling physics, we want to keep the effect of gravity.
-	if (IsFalling())
-	{
-		Result = Result - FVector::DotProduct(Result, VerticalDirection) + FVector::DotProduct(CurrentVelocity, VerticalDirection);
-	}
-
-	return Result;
 }
 
 bool UDGCharacterMovementComponent::IsWalkable(const FHitResult& Hit) const
@@ -1893,7 +1837,7 @@ void UDGCharacterMovementComponent::FindFloor(const FVector WalkableFloorNormal,
 				MaxPerchFloorDist += FMath::Max(0.f, PerchAdditionalHeight);
 			}
 
-			//*/ Compute Perch
+			// Compute Perch
 			FFindFloorResult PerchFloorResult;
 			if (ComputePerchResult(WalkableFloorNormal, GetValidPerchRadius(), OutFloorResult.HitResult, MaxPerchFloorDist, PerchFloorResult))
 			{
@@ -1916,7 +1860,6 @@ void UDGCharacterMovementComponent::FindFloor(const FVector WalkableFloorNormal,
 				// We had no floor (or an invalid one because it was unwalkable), and couldn't perch here, so invalidate floor (which will cause us to start falling).
 				OutFloorResult.bWalkableFloor = false;
 			}
-			//*/
 		}
 	}
 }
@@ -1987,7 +1930,6 @@ void UDGCharacterMovementComponent::ComputeFloorDist(const FVector WalkableFloor
 		{
 			// Reject hits adjacent to us, we only care about hits on the bottom portion of our capsule.
 			// Check 2D distance to impact point, reject if within a tolerance from radius.
-			//*//
 
 			if (Hit.bStartPenetrating || !IsWithinEdgeTolerance(WalkableFloorNormal, CapsuleLocation, Hit.ImpactPoint, CapsuleShape.Capsule.Radius))
 			{
@@ -2004,8 +1946,7 @@ void UDGCharacterMovementComponent::ComputeFloorDist(const FVector WalkableFloor
 					bBlockingHit = FloorSweepTest(Hit, CapsuleLocation, CapsuleLocation - WalkableFloorNormal * TraceDist, CollisionChannel, Rot, CapsuleShape, QueryParams, ResponseParam);
 				}
 			}
-			//*/
-			//*//
+
 			CapsuleShape.Capsule.Radius = FMath::Max(0.f, CapsuleShape.Capsule.Radius - SWEEP_EDGE_REJECT_DISTANCE - KINDA_SMALL_NUMBER);
 			if (!CapsuleShape.IsNearlyZero())
 			{
@@ -2016,7 +1957,7 @@ void UDGCharacterMovementComponent::ComputeFloorDist(const FVector WalkableFloor
 
 				bBlockingHit = FloorSweepTest(Hit, CapsuleLocation, CapsuleLocation - WalkableFloorNormal * TraceDist, CollisionChannel, Rot, CapsuleShape, QueryParams, ResponseParam);
 			}
-			//*/
+
 
 
 			// Reduce hit distance by ShrinkHeight because we shrank the capsule for the trace.
@@ -2178,7 +2119,7 @@ void UDGCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 			NewVerticalDirection = -GravityNormal();
 			break;
 		case EPhysicsRotationVerticalDirectionMode::PRVDM_Attraction:
-			NewVerticalDirection = -AttractionImpulse;
+			NewVerticalDirection = -LastAttractionImpulse;
 			break;
 		case EPhysicsRotationVerticalDirectionMode::PRVDM_VerticalDirection:
 			NewVerticalDirection = this->VerticalDirection;
