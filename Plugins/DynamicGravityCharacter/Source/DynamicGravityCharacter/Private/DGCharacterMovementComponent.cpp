@@ -593,6 +593,99 @@ FVector UDGCharacterMovementComponent::GetLedgeMove(const FVector& OldLocation, 
 	return FVector::ZeroVector;
 }
 
+void UDGCharacterMovementComponent::ApplyAccumulatedForces(float DeltaSeconds)
+{
+	FVector VerticalPendingImpulseToApply = PendingImpulseToApply.ProjectOnToNormal(VerticalDirection);
+	FVector VerticalPendingForceToApply = PendingForceToApply.ProjectOnToNormal(VerticalDirection);
+	if (!VerticalPendingImpulseToApply.IsZero() || !VerticalPendingForceToApply.IsZero())
+	{
+		// check to see if applied momentum is enough to overcome gravity
+		FVector Gravity = LastAttractionImpulse.IsNearlyZero() ? GetGravityZ() * FVector::DownVector : LastAttractionImpulse;
+		if (IsMovingOnGround() && ((VerticalPendingImpulseToApply * (1 + DeltaSeconds) + (Gravity * DeltaSeconds)).SizeSquared() > SMALL_NUMBER))
+		{
+			SetMovementMode(MOVE_Falling);
+		}
+	}
+
+	Velocity += PendingImpulseToApply + (PendingForceToApply * DeltaSeconds);
+
+	// Don't call ClearAccumulatedForces() because it could affect launch velocity
+	PendingImpulseToApply = FVector::ZeroVector;
+	PendingForceToApply = FVector::ZeroVector;
+}
+
+void UDGCharacterMovementComponent::ApplyRootMotionToVelocity(float deltaTime)
+{
+	//SCOPE_CYCLE_COUNTER(STAT_CharacterMovementRootMotionSourceApply);
+
+	// Animation root motion is distinct from root motion sources right now and takes precedence
+	if (HasAnimRootMotion() && deltaTime > 0.f)
+	{
+		Velocity = ConstrainAnimRootMotionVelocity(AnimRootMotionVelocity, Velocity);
+		return;
+	}
+
+	const FVector OldVelocity = Velocity;
+
+	bool bAppliedRootMotion = false;
+
+	// Apply override velocity
+	if (CurrentRootMotion.HasOverrideVelocity())
+	{
+		CurrentRootMotion.AccumulateOverrideRootMotionVelocity(deltaTime, *CharacterOwner, *this, Velocity);
+		bAppliedRootMotion = true;
+
+#if ROOT_MOTION_DEBUG
+		if (RootMotionSourceDebug::CVarDebugRootMotionSources.GetValueOnGameThread() == 1)
+		{
+			FString AdjustedDebugString = FString::Printf(TEXT("ApplyRootMotionToVelocity HasOverrideVelocity Velocity(%s)"),
+				*Velocity.ToCompactString());
+			RootMotionSourceDebug::PrintOnScreen(*CharacterOwner, AdjustedDebugString);
+		}
+#endif
+	}
+
+	// Next apply additive root motion
+	if (CurrentRootMotion.HasAdditiveVelocity())
+	{
+		CurrentRootMotion.LastPreAdditiveVelocity = Velocity; // Save off pre-additive Velocity for restoration next tick
+		CurrentRootMotion.AccumulateAdditiveRootMotionVelocity(deltaTime, *CharacterOwner, *this, Velocity);
+		CurrentRootMotion.bIsAdditiveVelocityApplied = true; // Remember that we have it applied
+		bAppliedRootMotion = true;
+
+#if ROOT_MOTION_DEBUG
+		if (RootMotionSourceDebug::CVarDebugRootMotionSources.GetValueOnGameThread() == 1)
+		{
+			FString AdjustedDebugString = FString::Printf(TEXT("ApplyRootMotionToVelocity HasAdditiveVelocity Velocity(%s) LastPreAdditiveVelocity(%s)"),
+				*Velocity.ToCompactString(), *CurrentRootMotion.LastPreAdditiveVelocity.ToCompactString());
+			RootMotionSourceDebug::PrintOnScreen(*CharacterOwner, AdjustedDebugString);
+		}
+#endif
+	}
+
+	// Switch to Falling if we have vertical velocity from root motion so we can lift off the ground
+	const FVector AppliedVelocityDelta = Velocity - OldVelocity;
+	if (bAppliedRootMotion && FVector::DotProduct(AppliedVelocityDelta, VerticalDirection) != 0.f && IsMovingOnGround())
+	{
+		float LiftoffBound;
+		if (CurrentRootMotion.LastAccumulatedSettings.HasFlag(ERootMotionSourceSettingsFlags::UseSensitiveLiftoffCheck))
+		{
+			// Sensitive bounds - "any positive force"
+			LiftoffBound = SMALL_NUMBER;
+		}
+		else
+		{
+			// Default bounds - the amount of force gravity is applying this tick
+			LiftoffBound = FMath::Max(GetGravityZ() * deltaTime, SMALL_NUMBER);
+		}
+
+		if (FVector::DotProduct(AppliedVelocityDelta, VerticalDirection) > LiftoffBound)
+		{
+			SetMovementMode(MOVE_Falling);
+		}
+	}
+}
+
 void UDGCharacterMovementComponent::PhysWalking(float deltaTime, int32 Iterations)
 {
 	SCOPE_CYCLE_COUNTER(STAT_CharPhysWalking);

@@ -187,7 +187,8 @@ protected:
 	virtual FVector HandleSlopeBoosting(const FVector& SlideResult, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const override;
 	virtual void RequestPathMove(const FVector& MoveInput) override;
 	virtual FVector GetLedgeMove(const FVector& OldLocation, const FVector& Delta, const FVector& GravDir) const override;
-
+	virtual void ApplyAccumulatedForces(float DeltaSeconds) override;
+	void ApplyRootMotionToVelocity(float deltaTime);
 
 	void PhysWalking(float deltaTime, int32 Iterations) override;
 
