@@ -600,8 +600,8 @@ void UDGCharacterMovementComponent::ApplyAccumulatedForces(float DeltaSeconds)
 	if (!VerticalPendingImpulseToApply.IsZero() || !VerticalPendingForceToApply.IsZero())
 	{
 		// check to see if applied momentum is enough to overcome gravity
-		FVector Gravity = LastAttractionImpulse.IsNearlyZero() ? GetGravityZ() * FVector::DownVector : LastAttractionImpulse;
-		if (IsMovingOnGround() && ((VerticalPendingImpulseToApply * (1 + DeltaSeconds) + (Gravity * DeltaSeconds)).SizeSquared() > SMALL_NUMBER))
+		FVector GravityToApply = LastAttractionImpulse.IsNearlyZero() ? Gravity() : LastAttractionImpulse;
+		if (IsMovingOnGround() && ((VerticalPendingImpulseToApply * (1 + DeltaSeconds) + (GravityToApply * DeltaSeconds)).SizeSquared() > SMALL_NUMBER))
 		{
 			SetMovementMode(MOVE_Falling);
 		}
