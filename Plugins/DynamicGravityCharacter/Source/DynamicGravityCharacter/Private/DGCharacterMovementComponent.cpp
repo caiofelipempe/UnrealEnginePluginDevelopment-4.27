@@ -32,6 +32,9 @@ UDGCharacterMovementComponent::UDGCharacterMovementComponent()
 	WalkableFloorNormalMode = DEFAULT_WALKABLE_FLOOR_NORMAL_MODE;
 	CustomWalkableFloorNormal = DEFAULT_CUSTOM_WALKABLE_FLOOR_NORMAL;
 
+	JumpDirectionMode = DEFAULT_JUMP_DIRECTION_MODE;
+	CustomJumpDirection = DEFAULT_CUSTOM_JUMP_DIRECTION;
+
 	AttractionImpulse = FVector::ZeroVector;
 
 	RotationAdjustIntensity = DEFAULT_LERP_ROTATION_RATE;
@@ -76,6 +79,22 @@ FVector UDGCharacterMovementComponent::WalkableFloorNormal() const
 		if (CurrentFloor.bWalkableFloor)
 			return CurrentFloor.HitResult.ImpactNormal;
 	case EWalkableFloorNormalMode::WFN_NoFloor:
+		return FVector();
+	default:
+		return CustomWalkableFloorNormal;
+	}
+}
+
+FVector UDGCharacterMovementComponent::JumpDirection() const
+{
+	switch (JumpDirectionMode)
+	{
+	case EJumpDirectionMode::JDM_Gravity:
+		return -GravityNormal();
+	case EJumpDirectionMode::JDM_Attraction:
+		return -LastAttractionImpulse.GetSafeNormal();
+	case EJumpDirectionMode::JDM_VerticalDirection:
+		return VerticalDirection;
 		return FVector();
 	default:
 		return CustomWalkableFloorNormal;
@@ -1868,7 +1887,7 @@ bool UDGCharacterMovementComponent::DoJump(bool bReplayingMoves)
 	if (CharacterOwner && CharacterOwner->CanJump())
 	{
 		// Don't jump if we can't move up/down.
-		FVector JumpNormal = LastAttractionImpulse.IsZero() ? VerticalDirection : -LastAttractionImpulse.GetSafeNormal();
+		FVector JumpNormal = JumpDirection();
 		if (!bConstrainToPlane || FMath::Abs(FVector::DotProduct(PlaneConstraintNormal, JumpNormal)) != 1.f)
 		{
 			float VerticalVelocity = FVector::DotProduct(Velocity, JumpNormal);
@@ -1890,7 +1909,7 @@ void UDGCharacterMovementComponent::JumpOff(AActor* MovementBaseActor)
 		{
 			const float MaxSpeed = GetMaxSpeed() * 0.85f;
 			Velocity += MaxSpeed * GetBestDirectionOffActor(MovementBaseActor);
-			FVector JumpNormal = LastAttractionImpulse.IsZero() ? VerticalDirection : -LastAttractionImpulse.GetSafeNormal();
+			FVector JumpNormal = JumpDirection();
 			if ((Velocity - Velocity.ProjectOnToNormal(JumpNormal)).Size() > MaxSpeed)
 			{
 				Velocity = MaxSpeed * Velocity.GetSafeNormal();

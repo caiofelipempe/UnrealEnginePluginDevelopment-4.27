@@ -18,6 +18,16 @@ enum class EWalkableFloorNormalMode : uint8
 	WFN_Custom					UMETA(DisplayName = "Custom")
 };
 
+UENUM(BlueprintType)
+enum class EJumpDirectionMode : uint8
+{
+	JDM_Gravity 			 	UMETA(DisplayName = "Gravity"),
+	JDM_Attraction				UMETA(DisplayName = "Attraction"),
+	JDM_VerticalDirection 		UMETA(DisplayName = "Vertical Direction"),
+	JDM_Custom					UMETA(DisplayName = "Custom")
+};
+
+
 
 UENUM(BlueprintType)
 enum class EPhysicsRotationVerticalDirectionMode : uint8
@@ -62,6 +72,24 @@ class DYNAMICGRAVITYCHARACTER_API UDGCharacterMovementComponent : public UCharac
 	UPROPERTY(Category = "Character Movement: Walking", VisibleAnywhere, BlueprintGetter = GetCustomWalkableFloorNormal, BlueprintSetter = SetCustomWalkableFloorNormal, meta = (AllowPrivateAccess = "true"))
 		FVector CustomWalkableFloorNormal;
 
+	/**
+	 * The jump direction.
+	 *    - Gravity:  Uses inverse of gravity normal as walkable jump direction.
+	 *    - Attraction:  Uses inverse of attraction normal as jump direction.
+	 *    - Vertical Direction:  Uses character vertical direction as jump direction.
+	 *    - Custom:  Uses the CustomJumpDirection as walkable floor normal.
+	 * @see CustomWalkableFloorNormal
+	 */
+	UPROPERTY(Category = "Character Movement: Jumping / Falling", EditAnywhere, BlueprintReadWrite, meta = (AllowPrivateAccess = "true"))
+		EJumpDirectionMode JumpDirectionMode;
+
+	/**
+	 * The direction of the floor if 'JumpDirectionMode' is 'Custom'.
+	 * @see JumpDirectionMode
+	*/
+	UPROPERTY(Category = "Character Movement: Jumping / Falling", VisibleAnywhere, BlueprintGetter = GetCustomJumpDirection, BlueprintSetter = SetCustomJumpDirection, meta = (AllowPrivateAccess = "true"))
+		FVector CustomJumpDirection;
+
 
 public:
 
@@ -72,6 +100,9 @@ public:
 
 	const EWalkableFloorNormalMode DEFAULT_WALKABLE_FLOOR_NORMAL_MODE = EWalkableFloorNormalMode::WFN_CharacterRotation;
 	const FVector DEFAULT_CUSTOM_WALKABLE_FLOOR_NORMAL = FVector::UpVector;
+
+	const EJumpDirectionMode DEFAULT_JUMP_DIRECTION_MODE = EJumpDirectionMode::JDM_Attraction;
+	const FVector DEFAULT_CUSTOM_JUMP_DIRECTION = FVector::UpVector;
 
 	const EPhysicsRotationVerticalDirectionMode DEFAULT_PHYSICS_ROTATION_VERTICAL_DIRECTION_MODE = EPhysicsRotationVerticalDirectionMode::PRVDM_VerticalDirection;
 
@@ -132,6 +163,19 @@ public:
 
 	UFUNCTION(Category = "Dynamic Gravity", BlueprintSetter)
 		void SetCustomWalkableFloorNormal(FVector NewFloorDirection) { CustomWalkableFloorNormal = NewFloorDirection.GetSafeNormal(); }
+
+	/**
+	 * The direction of jump applied.
+	 * @return The current walkable floor normal.
+	 */
+	UFUNCTION(Category = "Dynamic Gravity", BlueprintPure)
+		FVector JumpDirection() const;
+
+	UFUNCTION(Category = "Dynamic Gravity", BlueprintGetter)
+		FVector GetCustomJumpDirection() const { return CustomJumpDirection; }
+
+	UFUNCTION(Category = "Dynamic Gravity", BlueprintSetter)
+		void SetCustomJumpDirection(FVector NewJumpDirection) { CustomJumpDirection = NewJumpDirection.GetSafeNormal(); }
 
 
 	/** Calculate the vector that represents gravity. It is the multiplication of GravityZ and GravityDirection.*/
