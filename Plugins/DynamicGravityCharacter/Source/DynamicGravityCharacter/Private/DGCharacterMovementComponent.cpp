@@ -44,6 +44,12 @@ UDGCharacterMovementComponent::UDGCharacterMovementComponent()
 
 void UDGCharacterMovementComponent::UpdateVerticalDirection()
 {
+	if (CharacterOwner->JumpForceTimeRemaining > 0.0f)
+	{
+		VerticalDirection = JumpDirection();
+		return;
+	}
+
 	FVector WalkableFloorNormal = this->WalkableFloorNormal();
 	if (IsMovingOnGround() && WalkableFloorNormal.IsNormalized())
 	{
@@ -1893,6 +1899,7 @@ bool UDGCharacterMovementComponent::DoJump(bool bReplayingMoves)
 			float VerticalVelocity = FVector::DotProduct(Velocity, JumpNormal);
 			Velocity += -JumpNormal * fabs(VerticalVelocity) + JumpNormal * FMath::Max(VerticalVelocity, JumpZVelocity);
 			SetMovementMode(MOVE_Falling);
+			UpdateVerticalDirection();
 			return true;
 		}
 	}
@@ -1909,7 +1916,7 @@ void UDGCharacterMovementComponent::JumpOff(AActor* MovementBaseActor)
 		{
 			const float MaxSpeed = GetMaxSpeed() * 0.85f;
 			Velocity += MaxSpeed * GetBestDirectionOffActor(MovementBaseActor);
-			FVector JumpNormal = JumpDirection();
+			FVector JumpNormal = VerticalDirection;
 			if ((Velocity - Velocity.ProjectOnToNormal(JumpNormal)).Size() > MaxSpeed)
 			{
 				Velocity = MaxSpeed * Velocity.GetSafeNormal();
