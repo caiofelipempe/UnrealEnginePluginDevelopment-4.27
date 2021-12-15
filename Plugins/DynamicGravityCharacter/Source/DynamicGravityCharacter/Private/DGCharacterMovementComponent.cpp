@@ -36,6 +36,7 @@ UDGCharacterMovementComponent::UDGCharacterMovementComponent()
 	CustomJumpDirection = DEFAULT_CUSTOM_JUMP_DIRECTION;
 
 	DynamicGravity = FVector::ZeroVector;
+	bIgnoreWorldGravityIfDynamicGravityIsNotZero = true;
 
 	RotationAdjustIntensity = DEFAULT_LERP_ROTATION_RATE;
 	PhysicsRotationVerticalDirectionMode = DEFAULT_PHYSICS_ROTATION_VERTICAL_DIRECTION_MODE;
