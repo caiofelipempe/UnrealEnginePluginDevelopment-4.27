@@ -73,7 +73,7 @@ class DYNAMICGRAVITYCHARACTER_API UDGCharacterMovementComponent : public UCharac
 	 * The direction of the floor if 'WalkableFloorNormalMode' is 'Custom'.
 	 * @see WalkableFloorNormalMode
 	*/
-	UPROPERTY(Category = "Character Movement: Walking", EditAnywhere, BlueprintGetter = GetCustomWalkableFloorNormal, BlueprintSetter = SetCustomWalkableFloorNormal, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(Category = "Character Movement: Walking", VisibleAnywhere, BlueprintGetter = GetCustomWalkableFloorNormal, BlueprintSetter = SetCustomWalkableFloorNormal, meta = (AllowPrivateAccess = "true"))
 		FVector CustomWalkableFloorNormal;
 
 	/**

@@ -96,7 +96,7 @@ FVector UDGCharacterMovementComponent::WalkableFloorNormal() const
 	case EWalkableFloorNormalMode::WFN_NoFloor:
 		return FVector();
 	default:
-		return CustomWalkableFloorNormal.GetSafeNormal();
+		return CustomWalkableFloorNormal;
 	}
 }
 
