@@ -12,8 +12,8 @@ UENUM(BlueprintType)
 enum class EViewRotationBaseMode : uint8
 {
 	VRM_Gravity 				UMETA(DisplayName = "Gravity"),
-	VRM_WorldGravity 			UMETA(DisplayName = "WorldGravity"),
-	VRM_DynamicGravity 			UMETA(DisplayName = "DynamicGravity"),
+	VRM_WorldGravity 			UMETA(DisplayName = "World Gravity"),
+	VRM_DynamicGravity 			UMETA(DisplayName = "Dynamic Gravity"),
 	VRM_VerticalDirection 		UMETA(DisplayName = "Vertical Direction"),
 	VRM_CharacterRotation		UMETA(DisplayName = "Character Rotation"),
 	VRM_ControlRotation			UMETA(DisplayName = "Control Rotation"),
@@ -57,7 +57,8 @@ class DYNAMICGRAVITYCHARACTER_API ADGCharacter : public ACharacter
 	/**
 	 * The view rotation base mode. view rotation base is the view rotation without control rotation.
 	 *    - Gravity: The view rotation base is related to the negative direction of the gravity.
-	 *    - Attraction:  The view rotation base is related to the negative direction of the CharacterMovementComponent�s attraction.
+	 *    - World Gravity: The view rotation base is related to the negative direction of the world gravity.
+	 *    - Dynamic Gravity: The view rotation base is related to the negative direction of the dynamic gravity.
 	 *    - Vertical Direction:  The view rotation base is related to the vertical direction of the CharacterMovementComponent.
 	 *    - Character Rotation:  The view rotation base is related to the up vector of the character.
 	 *    - Control:  Uses only control rotation to rotate camera. So the control rotation base is always zero.
