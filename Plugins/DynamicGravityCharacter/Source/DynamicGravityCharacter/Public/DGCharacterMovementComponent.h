@@ -140,9 +140,9 @@ public:
 	UPROPERTY(Category = "Character Movement (General Settings)", BlueprintReadOnly)
 		FVector VerticalDirection;
 
-	/** Despises gravity in the next tick if any attraction impulse is applied. */
+	/** Despises World Gravity if Dynamic Gravity Is Differernt of zero. */
 	UPROPERTY(Category = "Character Movement (General Settings)", EditAnywhere, BlueprintReadWrite)
-		bool bIgnoreGravityIfApplyAttraction;
+		bool bIgnoreWorldGravityIfDynamicGravityIsNotZero;
 
 	/** The vector that represents Dynamic Gravity. */
 	UPROPERTY(Category = "Dynamic Gravity", EditAnywhere, BlueprintReadWrite)
@@ -180,9 +180,9 @@ public:
 	UFUNCTION(Category = "Dynamic Gravity", BlueprintPure)
 		FVector WorldGravity() const { return  GetGravityZ() * DEFAULT_GRAVITY_DIRECTION; }
 
-	/** Calculate the vector that represents gravity. The combination of World Gravity and Dynamic Gravity. If bIgnoreGravityIfApplyAttraction is true and DynamicGravity is not zero, then the value will be only DynamicGravity.*/
+	/** Calculate the vector that represents gravity. The combination of World Gravity and Dynamic Gravity. If bIgnoreWorldGravityIfDynamicGravityIsNotZero is true and DynamicGravity is not zero, then the value will be only DynamicGravity.*/
 	UFUNCTION(Category = "Dynamic Gravity", BlueprintPure)
-		FVector Gravity() const { return (bIgnoreGravityIfApplyAttraction && !DynamicGravity.Equals(FVector::ZeroVector)) ? DynamicGravity : WorldGravity() + DynamicGravity; }
+		FVector Gravity() const { return (bIgnoreWorldGravityIfDynamicGravityIsNotZero && !DynamicGravity.Equals(FVector::ZeroVector)) ? DynamicGravity : WorldGravity() + DynamicGravity; }
 
 	/**
 	 * The vector that represents World Gravity nomalized. If GravityZ is negative, it's direction will be oposite of gravity direction.
