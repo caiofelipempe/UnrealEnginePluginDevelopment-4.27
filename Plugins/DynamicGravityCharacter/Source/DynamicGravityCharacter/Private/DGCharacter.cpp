@@ -17,8 +17,11 @@ void ADGCharacter::UpdateRawViewRotation(float DeltaTime, UDGCharacterMovementCo
 	case EViewRotationBaseMode::VRM_Gravity:
 		ZVector = -MovementComponent->Gravity();
 		break;
-	case EViewRotationBaseMode::VRM_Attraction:
-		ZVector = -MovementComponent->LastAttractionImpulse;
+	case EViewRotationBaseMode::VRM_WorldGravity:
+		ZVector = -MovementComponent->WorldGravity();
+		break;
+	case EViewRotationBaseMode::VRM_DynamicGravity:
+		ZVector = -MovementComponent->DynamicGravity;
 		break;
 	case EViewRotationBaseMode::VRM_VerticalDirection:
 		ZVector = MovementComponent->VerticalDirection;

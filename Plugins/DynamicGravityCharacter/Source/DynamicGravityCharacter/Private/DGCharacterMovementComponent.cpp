@@ -35,7 +35,7 @@ UDGCharacterMovementComponent::UDGCharacterMovementComponent()
 	JumpDirectionMode = DEFAULT_JUMP_DIRECTION_MODE;
 	CustomJumpDirection = DEFAULT_CUSTOM_JUMP_DIRECTION;
 
-	AttractionImpulse = FVector::ZeroVector;
+	DynamicGravity = FVector::ZeroVector;
 
 	RotationAdjustIntensity = DEFAULT_LERP_ROTATION_RATE;
 	PhysicsRotationVerticalDirectionMode = DEFAULT_PHYSICS_ROTATION_VERTICAL_DIRECTION_MODE;
@@ -47,28 +47,34 @@ void UDGCharacterMovementComponent::UpdateVerticalDirection()
 	if (CharacterOwner->JumpForceTimeRemaining > 0.0f)
 	{
 		VerticalDirection = JumpDirection();
-		return;
+		if (VerticalDirection.IsNormalized())
+		{
+			return;
+		}
 	}
 
-	FVector WalkableFloorNormal = this->WalkableFloorNormal();
-	if (IsMovingOnGround() && WalkableFloorNormal.IsNormalized())
+	if (IsMovingOnGround())
 	{
-		VerticalDirection = WalkableFloorNormal;
-		return;
-	}
-
-	FVector CurrentTickAttractionImpulseNormal = AttractionImpulse.GetSafeNormal();
-	if (CurrentTickAttractionImpulseNormal.IsNormalized())
-	{
-		VerticalDirection = -CurrentTickAttractionImpulseNormal;
-		return;
+		VerticalDirection = this->WalkableFloorNormal();
+		if (VerticalDirection.IsNormalized())
+		{
+			return;
+		}
 	}
 
 	VerticalDirection = -GravityNormal();
-
-	if (!VerticalDirection.IsNormalized()) {
-		VerticalDirection = FVector::UpVector;
+	if (VerticalDirection.IsNormalized())
+	{
+		return;
 	}
+
+	VerticalDirection = -DynamicGravityNormal();
+	if (VerticalDirection.IsNormalized())
+	{
+		return;
+	}
+
+	VerticalDirection = FVector::UpVector;
 }
 
 FVector UDGCharacterMovementComponent::WalkableFloorNormal() const
@@ -77,8 +83,10 @@ FVector UDGCharacterMovementComponent::WalkableFloorNormal() const
 	{
 	case EWalkableFloorNormalMode::WFN_Gravity:
 		return -GravityNormal();
-	case EWalkableFloorNormalMode::WFN_Attraction:
-		return -LastAttractionImpulse.GetSafeNormal();
+	case EWalkableFloorNormalMode::WFN_DynamicGravity:
+		return -DynamicGravityNormal();
+	case EWalkableFloorNormalMode::WFN_WorldGravity:
+		return -WorldGravityNormal();
 	case EWalkableFloorNormalMode::WFN_CharacterRotation:
 		return CharacterOwner->GetActorUpVector();
 	case EWalkableFloorNormalMode::WFN_FloorImpactNormal:
@@ -87,7 +95,7 @@ FVector UDGCharacterMovementComponent::WalkableFloorNormal() const
 	case EWalkableFloorNormalMode::WFN_NoFloor:
 		return FVector();
 	default:
-		return CustomWalkableFloorNormal;
+		return CustomWalkableFloorNormal.GetSafeNormal();
 	}
 }
 
@@ -97,8 +105,10 @@ FVector UDGCharacterMovementComponent::JumpDirection() const
 	{
 	case EJumpDirectionMode::JDM_Gravity:
 		return -GravityNormal();
-	case EJumpDirectionMode::JDM_Attraction:
-		return -LastAttractionImpulse.GetSafeNormal();
+	case EJumpDirectionMode::JDM_DynamicGravity:
+		return -DynamicGravityNormal();
+	case EJumpDirectionMode::JDM_WorldGravity:
+		return -WorldGravityNormal();
 	case EJumpDirectionMode::JDM_VerticalDirection:
 		return VerticalDirection;
 		return FVector();
@@ -536,7 +546,7 @@ bool UDGCharacterMovementComponent::StepUp(const FVector& FloorDirection, const 
 
 FVector UDGCharacterMovementComponent::HandleSlopeBoosting(const FVector& SlideResult, const FVector& Delta, const float Time, const FVector& Normal, const FHitResult& Hit) const
 {
-	const FVector OpositeAttractionImpulseNormal = -LastAttractionImpulse.GetSafeNormal();
+	const FVector OpositeAttractionImpulseNormal = -GravityNormal();
 
 	FVector Result = SlideResult;
 	float ResultZ = FVector::DotProduct(Result, OpositeAttractionImpulseNormal);
@@ -622,10 +632,11 @@ void UDGCharacterMovementComponent::ApplyAccumulatedForces(float DeltaSeconds)
 {
 	FVector VerticalPendingImpulseToApply = PendingImpulseToApply.ProjectOnToNormal(VerticalDirection);
 	FVector VerticalPendingForceToApply = PendingForceToApply.ProjectOnToNormal(VerticalDirection);
+	FVector Grav = Gravity();
 	if (!VerticalPendingImpulseToApply.IsZero() || !VerticalPendingForceToApply.IsZero())
 	{
 		// check to see if applied momentum is enough to overcome gravity
-		FVector GravityToApply = LastAttractionImpulse.IsNearlyZero() ? Gravity() : LastAttractionImpulse;
+		FVector GravityToApply = Grav;
 		if (IsMovingOnGround() && ((VerticalPendingImpulseToApply * (1 + DeltaSeconds) + (GravityToApply * DeltaSeconds)).SizeSquared() > SMALL_NUMBER))
 		{
 			SetMovementMode(MOVE_Falling);
@@ -919,7 +930,7 @@ void UDGCharacterMovementComponent::SimulateMovement(float DeltaSeconds)
 						// No floor, must fall.
 						if (FVector::DotProduct(Velocity, VerticalDirection) <= 0.f || bApplyGravityWhileJumping || !CharacterOwner->IsJumpProvidingForce())
 						{
-							Velocity = NewFallVelocity(Velocity, LastAttractionImpulse, DeltaSeconds);
+							Velocity = NewFallVelocity(Velocity, Gravity(), DeltaSeconds);
 						}
 					}
 					SetMovementMode(MOVE_Falling);
@@ -1036,6 +1047,7 @@ void UDGCharacterMovementComponent::PhysWalking(float deltaTime, int32 Iteration
 
 		if (IsFalling())
 		{
+			GEngine->AddOnScreenDebugMessage(-1, 15.0f, FColor::Yellow, TEXT("test"));
 			// Root motion could have put us into Falling.
 			// No movement has taken place this movement tick so we pass on full time/past iteration count
 			StartNewPhysics(remainingTime + timeTick, Iterations - 1);
@@ -1609,7 +1621,7 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 
 
 	FVector FallAcceleration = GetFallingLateralAcceleration(DeltaTime);
-	FallAcceleration -= FallAcceleration.ProjectOnTo(LastAttractionImpulse);
+	FallAcceleration -= FallAcceleration.ProjectOnTo(Gravity());
 	const bool bHasAirControl = (FallAcceleration.SizeSquared() > 0.f);
 
 	float remainingTime = DeltaTime;
@@ -1628,6 +1640,7 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 		FVector OldVelocity = Velocity;
 		FVector VelocityNoAirControl = Velocity;
 
+		FVector Grav = Gravity();
 		// Apply input
 		if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
 		{
@@ -1638,18 +1651,18 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 				// Find velocity *without* acceleration.
 				TGuardValue<FVector> RestoreAcceleration(Acceleration, FVector::ZeroVector);
 				TGuardValue<FVector> RestoreVelocity(Velocity, Velocity);
-				Velocity -= Velocity.ProjectOnTo(LastAttractionImpulse);
+				Velocity -= Velocity.ProjectOnTo(Grav);
 				CalcVelocity(timeTick, FallingLateralFriction, false, MaxDecel);
-				VelocityNoAirControl = Velocity - Velocity.ProjectOnTo(LastAttractionImpulse) + OldVelocity.ProjectOnTo(LastAttractionImpulse);
+				VelocityNoAirControl = Velocity - Velocity.ProjectOnTo(Grav) + OldVelocity.ProjectOnTo(Grav);
 			}
 
 			// Compute Velocity
 			{
 				// Acceleration = FallAcceleration for CalcVelocity(), but we restore it after using it.
 				TGuardValue<FVector> RestoreAcceleration(Acceleration, FallAcceleration);
-				Velocity -= Velocity.ProjectOnTo(LastAttractionImpulse);
+				Velocity -= Velocity.ProjectOnTo(Grav);
 				CalcVelocity(timeTick, FallingLateralFriction, false, MaxDecel);
-				Velocity += OldVelocity.ProjectOnTo(LastAttractionImpulse);
+				Velocity += OldVelocity.ProjectOnTo(Grav);
 			}
 
 			// Just copy Velocity to VelocityNoAirControl if they are the same (ie no acceleration).
@@ -1677,13 +1690,13 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 			}
 		}
 
-		Velocity = NewFallVelocity(Velocity, LastAttractionImpulse, GravityTime);
-		VelocityNoAirControl = bHasAirControl ? NewFallVelocity(VelocityNoAirControl, LastAttractionImpulse, GravityTime) : Velocity;
+		Velocity = NewFallVelocity(Velocity, Grav, GravityTime);
+		VelocityNoAirControl = bHasAirControl ? NewFallVelocity(VelocityNoAirControl, Grav, GravityTime) : Velocity;
 		const FVector AirControlAccel = (Velocity - VelocityNoAirControl) / timeTick;
 
 		ApplyRootMotionToVelocity(timeTick);
 
-		if (bNotifyApex && (Velocity.ProjectOnTo(LastAttractionImpulse).Size() <= 0.f))
+		if (bNotifyApex && (Velocity.ProjectOnTo(Grav).Size() <= 0.f))
 		{
 			// Just passed jump apex since now going down
 			bNotifyApex = false;
@@ -1763,7 +1776,7 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 				if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !bJustTeleported)
 				{
 					const FVector NewVelocity = (Delta / subTimeTickRemaining);
-					Velocity = HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() ? Velocity + (NewVelocity - Velocity).ProjectOnTo(LastAttractionImpulse) : NewVelocity;
+					Velocity = HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() ? Velocity + (NewVelocity - Velocity).ProjectOnTo(Grav) : NewVelocity;
 				}
 
 				if (subTimeTickRemaining > KINDA_SMALL_NUMBER && (Delta | Adjusted) > 0.f)
@@ -1792,7 +1805,7 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 							return;
 						}
 
-						const FVector OpositeAttractionImpulseNormal = -LastAttractionImpulse.GetSafeNormal();
+						const FVector OpositeAttractionImpulseNormal = -Grav.GetSafeNormal();
 						// Act as if there was no air control on the last move when computing new deflection.
 						if (bHasAirControl && FVector::DotProduct(Hit.Normal, OpositeAttractionImpulseNormal) > VERTICAL_SLOPE_NORMAL_Z)
 						{
@@ -1820,7 +1833,7 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 						if (subTimeTickRemaining > KINDA_SMALL_NUMBER && !bJustTeleported)
 						{
 							const FVector NewVelocity = (Delta / subTimeTickRemaining);
-							Velocity = HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() ? Velocity + (NewVelocity - Velocity).ProjectOnTo(LastAttractionImpulse) : NewVelocity;
+							Velocity = HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity() ? Velocity + (NewVelocity - Velocity).ProjectOnTo(Grav) : NewVelocity;
 						}
 
 						// bDitch=true means that pawn is straddling two slopes, neither of which he can stand on
@@ -1865,7 +1878,7 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 			}
 		}
 
-		FVector HorizontalVelocity = Velocity - Velocity.ProjectOnTo(LastAttractionImpulse);
+		FVector HorizontalVelocity = Velocity - Velocity.ProjectOnTo(Grav);
 		if (HorizontalVelocity.SizeSquared() <= KINDA_SMALL_NUMBER * 10.f)
 		{
 			Velocity -= HorizontalVelocity;
@@ -1876,7 +1889,7 @@ void UDGCharacterMovementComponent::PhysFalling(float DeltaTime, int32 Iteration
 FVector UDGCharacterMovementComponent::GetFallingLateralAcceleration(float DeltaTime)
 {
 	// No acceleration in Z
-	FVector FallAcceleration = Acceleration - Acceleration.ProjectOnTo(LastAttractionImpulse);
+	FVector FallAcceleration = Acceleration - Acceleration.ProjectOnTo(Gravity());
 
 	// bound acceleration, falling object has minimal ability to impact acceleration
 	if (!HasAnimRootMotion() && FallAcceleration.SizeSquared() > 0.f)
@@ -2503,8 +2516,11 @@ void UDGCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		case EPhysicsRotationVerticalDirectionMode::PRVDM_Gravity:
 			NewVerticalDirection = -GravityNormal();
 			break;
-		case EPhysicsRotationVerticalDirectionMode::PRVDM_Attraction:
-			NewVerticalDirection = -LastAttractionImpulse;
+		case EPhysicsRotationVerticalDirectionMode::PRVDM_WorldGravity:
+			NewVerticalDirection = -WorldGravityNormal();
+			break;
+		case EPhysicsRotationVerticalDirectionMode::PRVDM_DynamicGravity:
+			NewVerticalDirection = -DynamicGravityNormal();
 			break;
 		case EPhysicsRotationVerticalDirectionMode::PRVDM_VerticalDirection:
 			NewVerticalDirection = this->VerticalDirection;
@@ -2553,15 +2569,6 @@ void UDGCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 
 void UDGCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
-	if (!bIgnoreGravityIfApplyAttraction || AttractionImpulse.Equals(FVector::ZeroVector))
-	{
-		AttractionImpulse += Gravity();
-	}
-
 	UpdateVerticalDirection();
-
 	UCharacterMovementComponent::TickComponent(DeltaTime, TickType, ThisTickFunction);
-
-	LastAttractionImpulse = AttractionImpulse;
-	AttractionImpulse = FVector::ZeroVector;
 }

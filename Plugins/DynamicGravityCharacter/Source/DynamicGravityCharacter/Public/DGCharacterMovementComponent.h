@@ -10,8 +10,9 @@
 UENUM(BlueprintType)
 enum class EWalkableFloorNormalMode : uint8
 {
-	WFN_Gravity 			 	UMETA(DisplayName = "Gravity"),
-	WFN_Attraction				UMETA(DisplayName = "Attraction"),
+	WFN_Gravity					UMETA(DisplayName = "Gravity"),
+	WFN_WorldGravity 			UMETA(DisplayName = "WorldGravity"),
+	WFN_DynamicGravity			UMETA(DisplayName = "DynamicGravity"),
 	WFN_CharacterRotation		UMETA(DisplayName = "Character Rotation"),
 	WFN_FloorImpactNormal		UMETA(DisplayName = "Floor Impact Normal"),
 	WFN_NoFloor					UMETA(DisplayName = "No Floor"),
@@ -22,7 +23,8 @@ UENUM(BlueprintType)
 enum class EJumpDirectionMode : uint8
 {
 	JDM_Gravity 			 	UMETA(DisplayName = "Gravity"),
-	JDM_Attraction				UMETA(DisplayName = "Attraction"),
+	JDM_WorldGravity 		 	UMETA(DisplayName = "WorldGravity"),
+	JDM_DynamicGravity 			UMETA(DisplayName = "DynamicGravity"),
 	JDM_VerticalDirection 		UMETA(DisplayName = "Vertical Direction"),
 	JDM_Custom					UMETA(DisplayName = "Custom")
 };
@@ -33,7 +35,8 @@ UENUM(BlueprintType)
 enum class EPhysicsRotationVerticalDirectionMode : uint8
 {
 	PRVDM_Gravity 			 	    UMETA(DisplayName = "Gravity"),
-	PRVDM_Attraction				UMETA(DisplayName = "Attraction"),
+	PRVDM_WorldGravity		 	    UMETA(DisplayName = "WorldGravity"),
+	PRVDM_DynamicGravity	 	    UMETA(DisplayName = "DynamicGravity"),
 	PRVDM_VerticalDirection 		UMETA(DisplayName = "Vertical Direction"),
 	PRVDM_Custom					UMETA(DisplayName = "Custom")
 };
@@ -69,7 +72,7 @@ class DYNAMICGRAVITYCHARACTER_API UDGCharacterMovementComponent : public UCharac
 	 * The direction of the floor if 'WalkableFloorNormalMode' is 'Custom'.
 	 * @see WalkableFloorNormalMode
 	*/
-	UPROPERTY(Category = "Character Movement: Walking", VisibleAnywhere, BlueprintGetter = GetCustomWalkableFloorNormal, BlueprintSetter = SetCustomWalkableFloorNormal, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(Category = "Character Movement: Walking", EditAnywhere, BlueprintGetter = GetCustomWalkableFloorNormal, BlueprintSetter = SetCustomWalkableFloorNormal, meta = (AllowPrivateAccess = "true"))
 		FVector CustomWalkableFloorNormal;
 
 	/**
@@ -101,7 +104,7 @@ public:
 	const EWalkableFloorNormalMode DEFAULT_WALKABLE_FLOOR_NORMAL_MODE = EWalkableFloorNormalMode::WFN_CharacterRotation;
 	const FVector DEFAULT_CUSTOM_WALKABLE_FLOOR_NORMAL = FVector::UpVector;
 
-	const EJumpDirectionMode DEFAULT_JUMP_DIRECTION_MODE = EJumpDirectionMode::JDM_Attraction;
+	const EJumpDirectionMode DEFAULT_JUMP_DIRECTION_MODE = EJumpDirectionMode::JDM_Gravity;
 	const FVector DEFAULT_CUSTOM_JUMP_DIRECTION = FVector::UpVector;
 
 	const EPhysicsRotationVerticalDirectionMode DEFAULT_PHYSICS_ROTATION_VERTICAL_DIRECTION_MODE = EPhysicsRotationVerticalDirectionMode::PRVDM_VerticalDirection;
@@ -138,17 +141,9 @@ public:
 	UPROPERTY(Category = "Character Movement (General Settings)", EditAnywhere, BlueprintReadWrite)
 		bool bIgnoreGravityIfApplyAttraction;
 
-	/** Attraction impulse applied in the last tick. */
-	UPROPERTY(Category = "Attraction", BlueprintReadOnly)
-		FVector LastAttractionImpulse;
-
 	/** Attraction impulse that will be applied in the next tick. Attraction impulse is different of impulse because it not only affects the velocity, but also the movement input and jump direction. */
-	UPROPERTY(Category = "Attraction", BlueprintReadWrite)
-		FVector AttractionImpulse;
-
-	/** Add attraction impulse. */
-	UFUNCTION(Category = "Attraction", BlueprintCallable)
-		void AddAttractionImpulse(FVector Impulse) { AttractionImpulse += Impulse; }
+	UPROPERTY(Category = "Attraction", EditAnywhere, BlueprintReadWrite)
+		FVector DynamicGravity;
 
 
 	/**
@@ -180,14 +175,24 @@ public:
 
 	/** Calculate the vector that represents gravity. It is the multiplication of GravityZ and GravityDirection.*/
 	UFUNCTION(Category = "Dynamic Gravity", BlueprintPure)
-		FVector Gravity() const { return  GetGravityZ() * DEFAULT_GRAVITY_DIRECTION; }
+		FVector WorldGravity() const { return  GetGravityZ() * DEFAULT_GRAVITY_DIRECTION; }
+
+	/** Calculate the vector that represents gravity.*/
+	UFUNCTION(Category = "Dynamic Gravity", BlueprintPure)
+		FVector Gravity() const { return (bIgnoreGravityIfApplyAttraction && !DynamicGravity.Equals(FVector::ZeroVector)) ? DynamicGravity : WorldGravity() + DynamicGravity; }
 
 	/**
-	 * The vector that represents gravity nomalized. If GravityZ is negative, it�s direction will be oposite of gravity direction.
+	 * The vector that represents world gravity nomalized. If GravityZ is negative, it's direction will be oposite of gravity direction.
 	 * @see Gravity()
 	 */
 	UFUNCTION(Category = "Dynamic Gravity", BlueprintPure)
-		FVector GravityNormal() const { return  GetGravityZ() >= 0 ? DEFAULT_GRAVITY_DIRECTION : -DEFAULT_GRAVITY_DIRECTION; }
+		FVector WorldGravityNormal() const { return  GetGravityZ() >= 0 ? DEFAULT_GRAVITY_DIRECTION : -DEFAULT_GRAVITY_DIRECTION; }
+
+	UFUNCTION(Category = "Dynamic Gravity", BlueprintPure)
+		FVector DynamicGravityNormal() const { return  DynamicGravity.GetSafeNormal(); }
+
+	UFUNCTION(Category = "Dynamic Gravity", BlueprintPure)
+		FVector GravityNormal() const { return  Gravity().GetSafeNormal(); }
 
 
 	/**

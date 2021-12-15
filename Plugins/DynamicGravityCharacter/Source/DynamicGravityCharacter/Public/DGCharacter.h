@@ -12,7 +12,8 @@ UENUM(BlueprintType)
 enum class EViewRotationBaseMode : uint8
 {
 	VRM_Gravity 				UMETA(DisplayName = "Gravity"),
-	VRM_Attraction				UMETA(DisplayName = "Attraction"),
+	VRM_WorldGravity 			UMETA(DisplayName = "WorldGravity"),
+	VRM_DynamicGravity 			UMETA(DisplayName = "DynamicGravity"),
 	VRM_VerticalDirection 		UMETA(DisplayName = "Vertical Direction"),
 	VRM_CharacterRotation		UMETA(DisplayName = "Character Rotation"),
 	VRM_ControlRotation			UMETA(DisplayName = "Control Rotation"),
