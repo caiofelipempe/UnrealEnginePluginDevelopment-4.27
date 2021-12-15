@@ -792,7 +792,7 @@ void UDGCharacterMovementComponent::MoveSmooth(const FVector& InVelocity, const 
 						const float UpDown = VerticalDirection | DesiredDir;
 						if ((UpDown < 0.5f) && (UpDown > -0.2f))
 						{
-							bSteppedUp = StepUp(VerticalDirection, Delta * (1.f - Hit.Time), Hit, OutStepDownResult);
+							bSteppedUp = StepUp(-VerticalDirection, Delta * (1.f - Hit.Time), Hit, OutStepDownResult);
 						}
 					}
 				}
